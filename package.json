@@ -1,0 +1,32 @@
+{
+  "name": "enhasa",
+  "version": "1.0.0",
+  "description": "Authentication and authorization service for Zeal.",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "APP_ENV=development tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "APP_ENV=${APP_ENV:-production} node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "APP_ENV=test npm run typecheck"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^4.4.3",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.9.2",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "@types/pg": "^8.20.0"
+  }
+}
