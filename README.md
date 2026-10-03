@@ -16,6 +16,8 @@ Enhasa exposes five surfaces:
 
 Access tokens are signed locally. Consumers validate them using metadata obtained from Enhasa; Enhasa is not called for every protected request.
 
+See [API.md](API.md) for the complete route, header, payload, response, and request-example reference.
+
 ## Runtime Requirements
 
 - Node.js 20 or newer
