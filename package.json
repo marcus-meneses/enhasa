@@ -8,6 +8,7 @@
     "dev": "APP_ENV=development tsx watch src/server.ts",
     "keys:development:ensure": "node scripts/development-keys.mjs ensure",
     "keys:development:regenerate": "node scripts/development-keys.mjs regenerate",
+    "keys:development:regenerate:stdout": "node scripts/development-keys.mjs regenerate-stdout",
     "build": "tsc",
     "start": "APP_ENV=${APP_ENV:-production} node dist/server.js",
     "typecheck": "tsc --noEmit",

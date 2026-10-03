@@ -13,8 +13,10 @@ const privateKeyPath = resolve(keyDirectory, "private.pem");
 const publicKeyPath = resolve(keyDirectory, "public.pem");
 const mode = process.argv[2] ?? "ensure";
 
-if (!new Set(["ensure", "regenerate"]).has(mode)) {
-  throw new Error(`Unsupported mode: ${mode}. Use ensure or regenerate.`);
+if (!new Set(["ensure", "regenerate", "regenerate-stdout"]).has(mode)) {
+  throw new Error(
+    `Unsupported mode: ${mode}. Use ensure, regenerate or regenerate-stdout.`,
+  );
 }
 
 const privateKeyExists = existsSync(privateKeyPath);
@@ -60,6 +62,11 @@ try {
   rmSync(temporaryPublicKeyPath, { force: true });
 }
 
-console.log(
-  `${mode === "regenerate" ? "Regenerated" : "Generated"} DEVELOPMENT key pair in ${keyDirectory}`,
-);
+if (mode === "regenerate-stdout") {
+  console.error(`Regenerated DEVELOPMENT key pair in ${keyDirectory}`);
+  process.stdout.write(`${JSON.stringify({ privateKey, publicKey })}\n`);
+} else {
+  console.log(
+    `${mode === "regenerate" ? "Regenerated" : "Generated"} DEVELOPMENT key pair in ${keyDirectory}`,
+  );
+}
