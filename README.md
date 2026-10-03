@@ -1,319 +1,185 @@
 # Enhasa
 
+Enhasa is the authentication and authorization authority for the application ecosystem. It authenticates users, signs RS256 access tokens, rotates refresh tokens, issues impersonation tokens, owns route-permission definitions, and brokers credentials used to establish authenticated Toma connections.
 
-## Configuration contract
+Enhasa does not own tenant business data or authorize individual Zeal business requests. Zeal validates Enhasa-issued JWTs locally and applies route-permission and tenant-ownership policies.
 
-Enhasa reads `APP_*` for its runtime and `DATABASE_*` for PostgreSQL. It has no direct HTTP service dependencies, so `config.services` is intentionally empty. Authentication keys and tokens remain backend-only configuration. The loader exposes the common `config.app`, `config.services`, and `config.database` structure and temporarily retains legacy aliases.
+## Responsibilities
 
-Enhasa is the authentication service for the Enhasa application family. It owns login, JWT signing, refresh-token issuance/rotation, logout, impersonation token creation, and public JWT validation metadata for resource services such as Zeal.
+- Authenticate active users associated with active customers and employees.
+- Issue and verify the ecosystem's RS256 JWT contract.
+- Maintain one refresh session per user and authorized application.
+- Rotate refresh tokens on every successful refresh.
+- Issue short-lived impersonation access tokens for SUP actors.
+- Store route permissions for the `ZEAL` and `KAHU` audiences.
+- Expose versioned permission snapshots to trusted services.
+- Register Toma process credentials and issue short-lived socket tickets.
+- Expose refresh-session administration to SUP users.
 
-Zeal and other resource apps do not receive Enhasa private signing keys. They call Enhasa at startup to load public validation metadata, then validate access tokens locally.
-
-## Main Responsibilities
-
-- Authenticate users from the shared PostgreSQL data model.
-- Issue RS256 bearer access tokens.
-- Issue, rotate, and delete opaque refresh tokens.
-- Enforce one active refresh session per user per authorized app.
-- Create impersonation access tokens for SUP users.
-- Serve public JWT validation metadata to trusted services.
-- Provide `/auth/me` identity introspection for bearer tokens.
-
-## Runtime Dependencies
-
-Enhasa requires:
-
-- Node.js with npm.
-- PostgreSQL with the expected `generalData` and `tenantData` schemas.
-- RSA key pairs under `src/keys/<ENV>/`.
-- A `.env` file matching `.env.example`.
-
-Default local port:
+## Ecosystem Position
 
 ```text
-3001
+Kahu / Kajar
+     |
+     | login, refresh, logout, /me, impersonation
+     v
+  Enhasa ---------------------> PostgreSQL
+     |                          users, employees, customers,
+     | validation metadata     refresh tokens, route permissions
+     | permission snapshot
+     v
+   Zeal ----------------------> tenant business data
+     |
+     | socket ticket
+     v
+   Toma
 ```
 
-## Environment
+Kahu is the tenant-facing frontend. Kajar is the administrative frontend. Zeal is the business API and local permission enforcement point. Toma provides real-time delivery. Enhasa is the source of identity and permission data used by those services.
 
-Use `.env.development`, `.env.test`, or `.env.production` according to `APP_ENV`. Put machine-local overrides in `.env.local` or `.env.<mode>.local`.
+## Runtime Requirements
 
-Environment is selected by `ENV` or `NODE_ENV`. Valid values:
+- Node.js 20 or newer
+- npm
+- PostgreSQL reachable with the configured credentials
+- The shared database schema already bootstrapped by Zeal
+- An RSA key pair for the selected environment
 
-- `development`
-- `test`
-- `production`
+Enhasa reads users and permission data from shared PostgreSQL schemas. It does not create or migrate those tables at startup.
 
-Environment-specific variables use uppercase prefixes:
+## Install And Run
+
+```bash
+npm install
+cp .env.example .env.development
+npm run dev
+```
+
+The development server listens on port `3001` by default. `npm run dev` runs the `predev` lifecycle first, ensuring that a DEVELOPMENT RSA pair exists, and then starts `tsx` in watch mode.
+
+Production build and startup:
+
+```bash
+npm run build
+APP_ENV=production npm start
+```
+
+The production key pair and environment configuration must be provisioned before startup.
+
+## Configuration
+
+Configuration files are loaded in this order:
+
+1. `.env`
+2. `.env.<APP_ENV>`
+3. `.env.local`
+4. `.env.<APP_ENV>.local`
+
+Values already present in the process environment take precedence over every file. Local and environment-specific files are ignored by Git; `.env.example` is the repository contract.
+
+### Application
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `APP_ENV` | No | `development` | Runtime environment: `development`, `test`, or `production`. |
+| `APP_PORT` | No | `3001` | HTTP listening port. |
+| `APP_PUBLIC_URL` | No | none | Public service URL retained in application configuration. |
+| `APP_CORS_ORIGINS` | No | empty | Comma-separated browser origins. |
+
+In non-production environments, localhost and `127.0.0.1` origins are also accepted. Known Kahu and Kajar dev/prod subdomains under `aisergateway.dev.br` are currently accepted by the CORS middleware.
+
+### Database
+
+| Variable | Required | Default |
+| --- | --- | --- |
+| `DATABASE_HOST` | Yes | - |
+| `DATABASE_PORT` | No | `5432` |
+| `DATABASE_NAME` | Yes | - |
+| `DATABASE_USER` | Yes | - |
+| `DATABASE_PASSWORD` | Yes | - |
+| `DATABASE_SSL` | No | `false` |
+| `POSTGRES_POOL_MAX` | No | `10` |
+| `POSTGRES_IDLE_TIMEOUT_MS` | No | `30000` |
+| `POSTGRES_CONNECTION_TIMEOUT_MS` | No | `5000` |
+
+The database role needs access to:
+
+- `generalData.users`
+- `generalData.customers`
+- `generalData.authRefreshTokens`
+- `generalData.routePermissions`
+- `generalData.permissionRevision`
+- `tenantData.employees`
+
+### Authentication
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `JWT_EXPIRES_IN` | No | `1h` | Access-token lifetime accepted by `jsonwebtoken`. |
+| `JWT_REFRESH_EXPIRES_IN_DAYS` | No | `30` | Refresh-token lifetime in days. |
+| `JWT_ISSUER` | No | `enhasa` | JWT issuer claim. |
+| `JWT_AUDIENCE` | No | `zeal` | JWT audience and fallback app identifier. |
+| `AUTHORIZED_APPS` | No | `kahu,kajar,zeal` | Applications allowed to create sessions. |
+| `VALIDATION_DATA_TOKEN` | Yes | - | Shared boot credential used by trusted services. |
+
+Legacy environment-specific database and application aliases remain accepted, but new deployments should use the names above.
+
+## Signing Keys
+
+Enhasa reads environment-specific keys from:
 
 ```text
-APP_PORT=3001
-VALIDATION_DATA_TOKEN=replace-with-shared-boot-token
-DATABASE_HOST=localhost
-POSTGRES_APP_PORT=5432
-DATABASE_USER=zeal
-DATABASE_PASSWORD=...
-DATABASE_NAME=zeal
-DATABASE_SSL=false
+src/keys/<ENVIRONMENT>/private.pem
+src/keys/<ENVIRONMENT>/public.pem
 ```
 
-Global JWT settings:
+`ENVIRONMENT` is the uppercase form of `APP_ENV`: `DEVELOPMENT`, `TEST`, or `PRODUCTION`. The private key must never be committed or distributed to resource services. Zeal obtains only the public key through the trusted validation-data endpoint.
 
-```text
-JWT_EXPIRES_IN=1h
-JWT_REFRESH_EXPIRES_IN_DAYS=30
-JWT_ISSUER=enhasa
-JWT_AUDIENCE=zeal
-AUTHORIZED_APPS=kahu,kajar,zeal
+### Development Key Lifecycle
+
+Ensure the DEVELOPMENT pair exists without replacing it:
+
+```bash
+npm run keys:development:ensure
 ```
 
-`AUTHORIZED_APPS` controls which `app` values are accepted by login, refresh, and logout. Kahu and Kajar send their app identifiers so refresh sessions are scoped per app.
+This runs automatically before `npm run dev`. It creates a 3072-bit RSA pair only when both files are absent. If only one file exists, it fails instead of silently creating an inconsistent pair.
 
-## Key Files
-
-Enhasa reads RS256 keys from:
-
-```text
-src/keys/<ENV>/private.pem
-src/keys/<ENV>/public.pem
-```
-
-Examples:
-
-```text
-src/keys/DEVELOPMENT/private.pem
-src/keys/DEVELOPMENT/public.pem
-src/keys/TEST/private.pem
-src/keys/TEST/public.pem
-src/keys/PRODUCTION/private.pem
-src/keys/PRODUCTION/public.pem
-```
-
-The private key must remain inside Enhasa. Resource services only need the public validation metadata exposed by `/auth/validation-data`.
-
-`npm run dev` automatically creates the DEVELOPMENT pair when both files are
-absent. Startup fails when only one file exists, preventing an inconsistent
-pair from being used. Existing keys are never replaced by startup.
-
-To deliberately replace the DEVELOPMENT pair:
+Deliberately replace the DEVELOPMENT pair:
 
 ```bash
 npm run keys:development:regenerate
 ```
 
-Regeneration invalidates DEVELOPMENT access tokens signed by the previous key.
-Production and test keys are never generated by these scripts.
-
-For deployment tooling that needs the regenerated DEVELOPMENT pair on standard
-output, use:
+Replace it and emit deployment-friendly JSON on `stdout`:
 
 ```bash
 npm run --silent keys:development:regenerate:stdout
 ```
 
-The command writes one JSON object containing `privateKey` and `publicKey` to
-`stdout`; its operational message goes to `stderr`. It also replaces the pair
-under `src/keys/DEVELOPMENT`. Run it only in a trusted interactive shell and do
-not allow its output into terminal history, CI logs, artifacts, or source
-control. Prefer piping it directly into the deployment secret manager.
+The JSON contains `privateKey` and `publicKey`; operational output goes to `stderr`. Pipe this output directly into a trusted secret-management tool. Never place it in shell history, CI logs, artifacts, or source control.
 
-## Development
+Generated permissions are `0700` for the directory, `0600` for the private key, and `0644` for the public key. Regeneration immediately invalidates every DEVELOPMENT access token signed by the previous pair. These scripts never generate TEST or PRODUCTION keys.
 
-Install dependencies:
+## Authentication Model
 
-```bash
-npm install
-```
+### Login Eligibility
 
-Start in watch mode:
+A user can authenticate only when all of the following are true:
 
-```bash
-npm run dev
-```
+- The user exists and is not deleted.
+- The user status is `active`.
+- The associated customer exists, is not deleted, and is `active`.
+- The associated employee exists, is not deleted, and is `active`.
+- The employee has `canLogin = true`.
+- The employee type maps to a recognized clearance.
+- The requested `app` belongs to `AUTHORIZED_APPS`.
 
-Build:
+Login currently compares the submitted password using the legacy `passwordSHA256` field. Unsalted SHA-256 is not an adequate password-storage scheme and should be migrated to a password KDF such as Argon2id before the authentication surface is considered production-hardened.
 
-```bash
-npm run build
-```
+### Access Tokens
 
-Type-check:
-
-```bash
-npm run typecheck
-```
-
-Start compiled server:
-
-```bash
-npm start
-```
-
-The compiled entry point is:
-
-```text
-dist/server.js
-```
-
-## Endpoints
-
-Health:
-
-```text
-GET /health
-```
-
-Returns service/database health.
-
-Validation metadata:
-
-```text
-GET /auth/validation-data
-```
-
-Requires header:
-
-```text
-x-enhasa-boot-token: <ENV>_VALIDATION_DATA_TOKEN
-```
-
-Returns:
-
-- JWT algorithm (`RS256`)
-- audience
-- issuer
-- public key
-
-Login:
-
-```text
-POST /auth/login
-```
-
-Body:
-
-```json
-{
-  "login": "admin",
-  "password": "admin-password",
-  "app": "kajar"
-}
-```
-
-`email` can be used instead of `login`. `app` is optional but should be provided by clients; if omitted, it defaults to the JWT audience.
-
-Response includes:
-
-- access token
-- refresh token
-- refresh expiration
-- token type
-- access-token lifetime
-- app
-
-Current user:
-
-```text
-GET /auth/me
-```
-
-Requires bearer access token.
-
-Impersonation:
-
-```text
-POST /auth/impersonate
-```
-
-Requires bearer access token from a SUP user.
-
-Body:
-
-```json
-{
-  "userId": "target-user-uuid"
-}
-```
-
-Returns an access token whose subject is the target user and whose `actor` claim contains the original SUP user. This lets resource services keep tenant behavior tied to the impersonated user while preserving SUP actor identity.
-
-Refresh:
-
-```text
-POST /auth/refresh
-```
-
-Body:
-
-```json
-{
-  "refreshToken": "opaque-refresh-token",
-  "app": "kahu"
-}
-```
-
-Refresh tokens are consumed on use. A successful refresh deletes the previous token and issues a replacement for the same app.
-
-Logout:
-
-```text
-POST /auth/logout
-```
-
-Body:
-
-```json
-{
-  "refreshToken": "opaque-refresh-token",
-  "app": "kahu"
-}
-```
-
-Deletes the matching refresh token and returns `204`.
-
-## Session Policy
-
-Enhasa stores refresh tokens hashed in PostgreSQL under `generalData.authRefreshTokens`.
-
-Policy:
-
-- Access tokens are stateless JWTs and expire naturally.
-- Refresh tokens are opaque random values; only hashes are stored.
-- Login deletes existing refresh tokens for the same `userId + app` before creating a new one.
-- Refresh consumes/deletes the submitted refresh token and creates a replacement.
-- Logout deletes the submitted refresh token.
-- This gives each user at most one active refresh session per authorized app.
-
-Example: a user can have one active Kahu session and one active Kajar session. A new Kahu login for that user invalidates the previous Kahu refresh session without killing Kajar.
-
-## User Lookup And Eligibility
-
-Enhasa authenticates users from PostgreSQL, joining:
-
-- `generalData.users`
-- `tenantData.employees`
-- `generalData.customers`
-
-A user can authenticate only when:
-
-- user is not deleted;
-- user status is `active`;
-- customer is active and not deleted;
-- employee is active and not deleted;
-- employee `canLogin` is true;
-- employee type maps to a known clearance.
-
-Passwords are compared using SHA-256 hashes from `generalData.users.passwordSHA256`.
-
-Known employee-type clearances currently include:
-
-```text
-SUP, GES, GFI, REC, VET, AVE, GBT, OTB, GHO, OPH, OPM, OUT
-```
-
-## JWT Claims
-
-Access tokens include:
+Access tokens are stateless RS256 JWTs containing:
 
 ```text
 sub
@@ -322,66 +188,177 @@ login
 email
 clearance
 clearanceLevel
+actor (impersonation only)
+iat / exp / aud / iss
 ```
 
-Impersonation tokens additionally include:
+Services validate the signature, audience, issuer, algorithm, and expiration. Access tokens are not persisted or checked against a revocation list on every request; they remain valid until expiration unless signing keys are rotated.
 
-```text
-actor
+### Refresh Sessions
+
+Refresh tokens are random 48-byte values returned as base64url. Enhasa stores only their SHA-256 hashes.
+
+The current session policy is one refresh session per user and app:
+
+- A successful login deletes all previous refresh tokens for that user/app.
+- The same user may retain independent sessions for different apps.
+- Refresh tokens are one-time use: refresh consumes the current row and creates a replacement.
+- Logout deletes the supplied refresh token.
+- Administrative revocation also deletes the token row.
+
+Deleting a refresh token prevents future renewal but does not invalidate an already issued stateless access token.
+
+### Impersonation
+
+Only an authenticated `SUP` user may call `/auth/impersonate`. The resulting access token uses the target user's identity and customer while retaining the real SUP identity in the `actor` claim.
+
+Impersonation does not issue a refresh token. Zeal uses the presence of `actor` when applying tenant-ownership behavior. At present a direct SUP token may receive privileged tenant bypass in Zeal, while an impersonated token does not; that distinction belongs to Zeal's authorization policy, not Enhasa's JWT verification.
+
+## Permission Model
+
+Enhasa owns `generalData.routePermissions`, including:
+
+- audience: `ZEAL` or `KAHU`
+- HTTP method and route path
+- `module.action` operation descriptor
+- allowed employee types
+- human-readable description and section
+- active state
+
+Permission mutations increment `generalData.permissionRevision` through the database revision mechanism. Trusted services retrieve the full snapshot and revision from `/internal/permissions`; clients can use revision changes to invalidate local access maps.
+
+Kajar manages records through SUP-only `/api/permissions` routes. Zeal loads, validates, audits, caches, and enforces the snapshot. Enhasa stores permission policy but does not enforce Zeal business routes itself.
+
+## Toma Integration
+
+Toma registers a master/client credential pair through a boot-token-protected internal endpoint. Zeal can retrieve that pair and request a 30-second socket ticket on behalf of an authenticated user.
+
+The ticket contains the effective operator and tenant identity, credential version, client-credential hash, nonce, session expiration, and `typ: toma-socket`. It is signed by Enhasa for audience `toma`.
+
+Toma credentials are currently held in Enhasa process memory. They are lost when Enhasa restarts and must be registered again by Toma. This is current behavior, not durable secret storage.
+
+## HTTP API
+
+### Public And Session Routes
+
+| Method | Path | Protection | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/health` | Public | Database-aware service health. |
+| `GET` | `/auth/validation-data` | Boot token | JWT validation contract for trusted services. |
+| `POST` | `/auth/login` | Public | Authenticate and create an app-scoped session. |
+| `POST` | `/auth/refresh` | Refresh token | Rotate refresh and access tokens. |
+| `POST` | `/auth/logout` | Refresh token | Delete the supplied refresh session. |
+| `GET` | `/auth/me` | Bearer JWT | Return the validated JWT identity. |
+| `POST` | `/auth/impersonate` | SUP bearer JWT | Issue an impersonation access token. |
+
+Trusted boot-token routes require:
+
+```http
+x-enhasa-boot-token: <VALIDATION_DATA_TOKEN>
 ```
 
-The `actor` contains the original SUP identity.
+### Refresh-Token Administration
 
-Tokens are signed with RS256 using the current environment private key and configured issuer/audience.
+All routes require an authenticated SUP token.
 
-## Relationship With Zeal
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/auth-tokens` | Paginated and searchable token metadata. |
+| `GET` | `/api/auth-tokens/summary` | Active, expired, revoked, and total counts. |
+| `POST` | `/api/auth-tokens/:id/revoke` | Delete a refresh-token record. |
 
-Zeal depends on Enhasa for:
+List filters include `limit`, `offset`, `search`, and `status` (`all`, `active`, `expired`, or `revoked`). Raw refresh tokens and complete hashes are never returned.
 
-- `/auth/login`, `/auth/refresh`, `/auth/logout`, and `/auth/impersonate` proxy behavior;
-- `/auth/validation-data` during Zeal startup;
-- the JWT issuer/audience/public key contract.
+### Permission Administration
 
-Zeal validates access tokens locally after boot. Enhasa is not called for every protected Zeal request.
+All routes require an authenticated SUP token.
 
-The `VALIDATION_DATA_TOKEN` in Enhasa must match `SERVICE_ENHASA_BOOT_TOKEN` in Zeal.
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/permissions` | List permissions, optionally by audience. |
+| `GET` | `/api/permissions/:id` | Retrieve one permission. |
+| `POST` | `/api/permissions` | Create a permission. |
+| `PATCH` | `/api/permissions/:id` | Update a permission. |
+| `DELETE` | `/api/permissions/:id` | Delete a permission. |
 
-## Source Structure
+Operations must follow `module.action`. Accepted employee types are `SUP`, `GES`, `GFI`, `REC`, `VET`, `AVE`, `GBT`, `OTB`, `GHO`, `OPH`, `OPM`, and `OUT`.
+
+### Internal Permissions
+
+| Method | Path | Protection | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/internal/permissions` | Boot token | Complete snapshot and revision. |
+| `GET` | `/internal/permissions/revision` | Boot token | Current revision only. |
+
+### Internal Toma Routes
+
+These routes require the boot token plus `x-enhasa-service: toma` or `x-enhasa-service: zeal`, as indicated:
+
+| Method | Path | Caller | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/internal/toma/credentials` | Toma | Register process credentials. |
+| `GET` | `/internal/toma/credentials` | Zeal | Retrieve registered credentials. |
+| `POST` | `/internal/toma/socket-ticket` | Zeal + user JWT | Issue a short-lived socket ticket. |
+
+## Health And Failure Behavior
+
+`GET /health` executes `SELECT 1`. A successful check returns `status: ok`. Database failures flow through the central error handler. Unknown routes return JSON with HTTP 404.
+
+Configuration and key files load during module initialization. Missing required variables, invalid `APP_ENV`, or missing selected-environment keys prevent startup rather than allowing a partially configured auth service.
+
+## Development Commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Ensure DEVELOPMENT keys and start the watch server. |
+| `npm run typecheck` | Validate TypeScript without emitting files. |
+| `npm test` | Run the current test target: type checking under `APP_ENV=test`. |
+| `npm run build` | Compile TypeScript into `dist/`. |
+| `npm start` | Run the compiled server, defaulting to production mode. |
+| `npm run keys:development:ensure` | Create missing DEVELOPMENT keys. |
+| `npm run keys:development:regenerate` | Replace DEVELOPMENT keys. |
+| `npm run keys:development:regenerate:stdout` | Replace and emit the pair as JSON. |
+
+The current test suite has no integration tests for PostgreSQL, session concurrency, permission revisioning, or Toma tickets. These remain important coverage gaps.
+
+## Project Structure
 
 ```text
 src/
-  app.ts                         Express app and route mounting
-  server.ts                      Startup entry point
-  config/env.ts                  Environment and key loading
+  app.ts                         Express composition and route mounting
+  server.ts                      HTTP listener
+  config/                        Environment loading and typed configuration
   database/                      PostgreSQL pool wrapper
-  keys/                          Environment-specific RSA key pairs
-  middleware/authenticate.ts     Bearer JWT verification
-  middleware/validateRequest.ts  Zod request validation
-  repositories/                  User and refresh-token persistence
-  routes/auth.routes.ts          Auth endpoint implementation
-  routes/validation.schemas.ts   Auth request schemas
-  types/auth.ts                  Auth/JWT types
+  middleware/                    JWT, CORS, validation, and errors
+  repositories/                  Users, sessions, tokens, and permissions
+  routes/                        Auth, token, permission, and Toma APIs
+  services/                      In-memory Toma credential registry
+  types/                         Authentication and Express types
+scripts/
+  development-keys.mjs           DEVELOPMENT RSA key lifecycle
 ```
 
-## Adding A Client App
+## Security And Operational Notes
 
-1. Add the app identifier to `AUTHORIZED_APPS`.
-2. Make the client send `app` on login, refresh, and logout.
-3. Ensure the database has the `authRefreshTokens.app` column and unique app-scoped session policy from the current schema.
-4. Update operational documentation for the new app.
+- Never commit `.env` files or `src/keys`.
+- Limit `VALIDATION_DATA_TOKEN` to trusted service processes.
+- Serve Enhasa behind TLS; credentials and bearer tokens must not cross public plain HTTP.
+- Keep application identifiers explicit in login, refresh, and logout calls.
+- Persist production keys across process replacement.
+- Treat signing-key regeneration as a session-invalidating operation.
+- Restarting Enhasa requires Toma credential registration again.
+- Refresh-token deletion is not immediate access-token revocation.
+- Migrate legacy password SHA-256 storage before production hardening.
 
-## Troubleshooting
+## Current Boundaries
 
-If Zeal cannot start because validation data cannot be loaded, verify Enhasa is running and the boot token matches between both services.
+Enhasa intentionally does not:
 
-If login returns `Unauthorized app`, check `AUTHORIZED_APPS` and the app value sent by the client.
+- own tenant business entities;
+- enforce tenant ownership for tutors, animals, sales, inventory, or services;
+- decide UI visibility directly;
+- persist Toma process credentials;
+- revoke stateless access tokens per request;
+- bootstrap or migrate the shared database schema.
 
-If login returns `Invalid credentials`, verify the user exists, `passwordSHA256` matches the submitted password, and the user/customer/employee eligibility rules all pass.
-
-If refresh returns `Invalid or expired refresh token`, the token may have already been consumed, deleted by a newer login for the same app, expired, or sent with the wrong app.
-
-If remote apps fail to authenticate, confirm the frontend is pointed at Zeal or Enhasa using a reachable host/IP instead of browser-local `localhost`.
-
-### Environment files
-
-Local configuration uses ignored mode files: `.env.development`, `.env.test`, and `.env.production`. Select the mode with `APP_ENV` (or `NODE_ENV` as a fallback). Resolution priority is process environment, `.env.<mode>.local`, `.env.local`, `.env.<mode>`, then legacy `.env`. `.env.example` documents keys only and is never loaded. Real mode files must not be committed.
+These boundaries keep identity issuance centralized while allowing Zeal to remain the enforcement point closest to business resources.
