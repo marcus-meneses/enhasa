@@ -90,6 +90,25 @@ curl --fail-with-body \
 
 Database exceptions are handled as HTTP 500 errors.
 
+### `GET /openapi.json`
+
+Returns the OpenAPI 3.1 definition assembled from Enhasa's mounted routers and runtime Zod request schemas.
+
+**Authentication:** none.
+
+**Request data:** none.
+
+**Example:**
+
+```bash
+curl --fail-with-body \
+  "$ENHASA_URL/openapi.json"
+```
+
+**Response: `200 OK`**
+
+The response is an OpenAPI 3.1 JSON document. Its paths are rebuilt from the mounted router registry whenever requested.
+
 ## Authentication
 
 ### `GET /auth/validation-data`

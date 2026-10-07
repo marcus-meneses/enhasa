@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { env } from "../config/env";
 import { authenticate } from "../middleware/authenticate";
+import { validateRequest } from "../middleware/validateRequest";
 import { getTomaCredentials, registerTomaCredentials, tomaClientTokenHash } from "../services/toma-credential.service";
 
 export const tomaRouter = Router();
@@ -20,10 +21,9 @@ const trusted = (service: "toma" | "zeal") => (req: Request, res: Response, next
   next();
 };
 
-tomaRouter.post("/credentials", trusted("toma"), (req, res) => {
-  const parsed = credentialsSchema.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ message: "Invalid credentials payload" }); return; }
-  res.status(201).json(registerTomaCredentials(parsed.data.masterToken, parsed.data.clientToken));
+tomaRouter.post("/credentials", trusted("toma"), validateRequest({ body: credentialsSchema }), (_req, res) => {
+  const credentials = res.locals.validated.body as z.infer<typeof credentialsSchema>;
+  res.status(201).json(registerTomaCredentials(credentials.masterToken, credentials.clientToken));
 });
 
 tomaRouter.get("/credentials", trusted("zeal"), (_req, res) => {

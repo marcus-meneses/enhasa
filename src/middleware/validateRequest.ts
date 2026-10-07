@@ -13,11 +13,12 @@ export interface ValidatedRequestData {
   params?: unknown;
 }
 
-export const validateRequest = (schemas: RequestSchemas) => (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
+export const validateRequest = (schemas: RequestSchemas) => {
+  const middleware = (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): void => {
   try {
     const validated: ValidatedRequestData = {};
 
@@ -53,4 +54,7 @@ export const validateRequest = (schemas: RequestSchemas) => (
 
     next(error);
   }
+  };
+  middleware.requestSchemas = schemas;
+  return middleware;
 };

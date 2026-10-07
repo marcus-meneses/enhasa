@@ -17,6 +17,7 @@ Enhasa exposes five surfaces:
 Access tokens are signed locally. Consumers validate them using metadata obtained from Enhasa; Enhasa is not called for every protected request.
 
 See [API.md](API.md) for the complete route, header, payload, response, and request-example reference.
+The running service publishes an OpenAPI 3.1 definition at `GET /openapi.json`; its paths and request schemas are assembled from the mounted routers and the same Zod validators used at runtime.
 
 ## Runtime Requirements
 
@@ -253,6 +254,7 @@ All request and response bodies use JSON unless the response has HTTP 204. Valid
 | Method | Path | Protection | Response |
 | --- | --- | --- | --- |
 | `GET` | `/health` | Public | Service and database status after `SELECT 1`. |
+| `GET` | `/openapi.json` | Public | OpenAPI 3.1 definition generated from the mounted HTTP surface. |
 
 ### Authentication
 
